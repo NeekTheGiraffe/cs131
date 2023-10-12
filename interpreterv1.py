@@ -1,4 +1,4 @@
-from intbase import InterpreterBase
+from intbase import InterpreterBase, ErrorType
 from brewparse import parse_program
 
 class TypedValue:
@@ -14,7 +14,12 @@ class Interpreter(InterpreterBase):
         ast = parse_program(program)
         self.variable_name_to_value: dict[str, TypedValue] = {}
 
-        main_func_node = next((func for func in ast.dict['functions'] if func.dict['name'] == 'main'))
+        main_func_node = next((func for func in ast.dict['functions'] if func.dict['name'] == 'main'), None)
+        if main_func_node == None:
+            super().error(
+                ErrorType.NAME_ERROR,
+                "No main() function was found",
+            )
         self.run_func(main_func_node)
 
     def run_func(self, func_node):
@@ -40,6 +45,11 @@ class Interpreter(InterpreterBase):
                 self.run_print(args)
             case 'inputi':
                 return self.run_inputi(args)
+            case unknown_func_name:
+                super().error(
+                    ErrorType.NAME_ERROR,
+                    f"Function {unknown_func_name} has not been defined",
+                )
      
     def evaluate_expression(self, expression_node) -> TypedValue:
         match expression_node.elem_type:
@@ -48,13 +58,27 @@ class Interpreter(InterpreterBase):
             case 'fcall':
                 return self.do_func_call(expression_node)
             case 'var':
-                return self.variable_name_to_value[expression_node.dict['name']]
+                return self.get_variable_value(expression_node)
             case 'int' | 'string':
                 return TypedValue(expression_node.elem_type, expression_node.dict['val'])
-            
+
+    def get_variable_value(self, variable_node):
+        var_name = variable_node.dict['name']
+        if not var_name in self.variable_name_to_value:
+            super().error(
+                ErrorType.NAME_ERROR,
+                f"Variable {var_name} has not been defined",
+            )
+        return self.variable_name_to_value[var_name]
+
     def evaluate_binary_operator(self, expression_node) -> TypedValue:
         op1 = self.evaluate_expression(expression_node.dict['op1'])
         op2 = self.evaluate_expression(expression_node.dict['op2'])
+        if op1.type != 'int' or op2.type != 'int':
+            super().error(
+                ErrorType.TYPE_ERROR,
+                f"Incompatible types {op1.type} and {op2.type} for arithmetic operation",
+            )
         match expression_node.elem_type:
             case '+':
                 return TypedValue('int', op1.value + op2.value)
@@ -66,6 +90,11 @@ class Interpreter(InterpreterBase):
         super().output(string_to_output)
 
     def run_inputi(self, args):
+        if len(args) > 1:
+            super().error(
+                ErrorType.NAME_ERROR,
+                "No inputi() function found that takes >1 parameter",
+            )
         if len(args) > 0:
             super().output(args[0].value)
         return int(super().get_input())
