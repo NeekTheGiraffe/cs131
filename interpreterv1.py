@@ -97,4 +97,4 @@ class Interpreter(InterpreterBase):
             )
         if len(args) > 0:
             super().output(args[0].value)
-        return int(super().get_input())
+        return TypedValue('int', int(super().get_input()))
