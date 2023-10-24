@@ -1,8 +1,26 @@
 from intbase import InterpreterBase, ErrorType
 from brewparse import parse_program
 
+BINARY_OPERATORS = set(['+', '-', '*', '/', '==', '<', '<=', '>', '>=', '!='])
+UNARY_OPERATORS = set(['neg', '!'])
+OPERATORS = BINARY_OPERATORS | UNARY_OPERATORS
+VALID_OPERAND_TYPES = {
+    '+': [['int', 'int'], ['string', 'string']],
+    '-': [['int', 'int']],
+    '*': [['int', 'int']],
+    '/': [['int', 'int']],
+    '==': [['any', 'any']],
+    '<': [['int', 'int']],
+    '<=': [['int', 'int']],
+    '>': [['int', 'int']],
+    '>=': [['int', 'int']],
+    '!=': [['any', 'any']],
+    'neg': [['int']],
+    '!': [['bool']],
+}
+
 class TypedValue:
-    def __init__(self, type: str, value):
+    def __init__(self, type: str, value: int | str | bool | None):
         self.type = type
         self.value = value
 
@@ -52,14 +70,16 @@ class Interpreter(InterpreterBase):
                 )
      
     def evaluate_expression(self, expression_node) -> TypedValue:
+        if expression_node.elem_type in OPERATORS:
+            return self.evaluate_operation(expression_node)
         match expression_node.elem_type:
-            case '+' | '-':
-                return self.evaluate_binary_operator(expression_node)
             case 'fcall':
                 return self.do_func_call(expression_node)
             case 'var':
                 return self.get_variable_value(expression_node)
-            case 'int' | 'string':
+            case 'nil':
+                return TypedValue('nil', None)
+            case 'int' | 'string' | 'bool':
                 return TypedValue(expression_node.elem_type, expression_node.dict['val'])
 
     def get_variable_value(self, variable_node):
@@ -71,20 +91,59 @@ class Interpreter(InterpreterBase):
             )
         return self.variable_name_to_value[var_name]
 
-    def evaluate_binary_operator(self, expression_node) -> TypedValue:
+    def do_operand_types_match(self, operands, operator):
+        for types in VALID_OPERAND_TYPES[operator]:
+            match = True
+            for operand, type in zip(operands, types):
+                if type != 'any' and operand.type != type:
+                    match = False
+                    break
+            if match:
+                return True
+        return False
+
+    def evaluate_operation(self, expression_node) -> TypedValue:
+        operator = expression_node.elem_type
         op1 = self.evaluate_expression(expression_node.dict['op1'])
-        op2 = self.evaluate_expression(expression_node.dict['op2'])
-        if op1.type != 'int' or op2.type != 'int':
+        if operator in BINARY_OPERATORS:
+            op2 = self.evaluate_expression(expression_node.dict['op2'])
+            operands = [op1, op2]
+        else:
+            operands = [op1]
+
+        if not self.do_operand_types_match(operands, operator):
             super().error(
                 ErrorType.TYPE_ERROR,
-                f"Incompatible types {op1.type} and {op2.type} for arithmetic operation",
+                f"Incompatible types {', '.join(operands)} for operation {operator}"
             )
-        match expression_node.elem_type:
+        match operator:
             case '+':
-                return TypedValue('int', op1.value + op2.value)
+                return TypedValue(op1.type, op1.value + op2.value)
             case '-':
                 return TypedValue('int', op1.value - op2.value)
-    
+            case '*':
+                return TypedValue('int', op1.value * op2.value)
+            case '*':
+                return TypedValue('int', op1.value * op2.value)
+            case '/':
+                return TypedValue('int', op1.value // op2.value)
+            case '==':
+                return TypedValue('bool', op1.type == op2.type and op1.value == op2.value)
+            case '!=':
+                return TypedValue('bool', op1.type != op2.type or op1.value != op2.value)
+            case '<':
+                return TypedValue('bool', op1.value < op2.value)
+            case '<=':
+                return TypedValue('bool', op1.value <= op2.value)
+            case '>':
+                return TypedValue('bool', op1.value > op2.value)
+            case '>=':
+                return TypedValue('bool', op1.value >= op2.value)
+            case 'neg':
+                return TypedValue('int', -op1.value)
+            case '!':
+                return TypedValue('bool', not op1.value)
+
     def run_print(self, args):
         string_to_output = "".join([str(x.value) for x in args])
         super().output(string_to_output)
