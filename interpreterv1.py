@@ -15,7 +15,7 @@ class Interpreter(InterpreterBase):
         self.variable_name_to_value: dict[str, TypedValue] = {}
 
         main_func_node = next((func for func in ast.dict['functions'] if func.dict['name'] == 'main'), None)
-        if main_func_node == None:
+        if main_func_node is None:
             super().error(
                 ErrorType.NAME_ERROR,
                 "No main() function was found",
