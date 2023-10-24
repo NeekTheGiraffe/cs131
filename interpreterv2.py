@@ -1,5 +1,6 @@
 from intbase import InterpreterBase, ErrorType
 from brewparse import parse_program
+import copy
 
 BINARY_OPERATORS = set(['+', '-', '*', '/', '==', '<', '<=', '>', '>=', '!=', '&&', '||'])
 UNARY_OPERATORS = set(['neg', '!'])
@@ -32,9 +33,17 @@ class Interpreter(InterpreterBase):
 
     def run(self, program):
         ast = parse_program(program)
-        self.variable_name_to_value: dict[str, TypedValue] = {}
+        self.variables: dict[str, list[TypedValue]] = {} # Maps variable names to a list of shadowed scopes
+        self.functions = {} # Maps function names to function nodes
+        self.scopes = [set()]
 
-        main_func_node = next((func for func in ast.dict['functions'] if func.dict['name'] == 'main'), None)
+        main_func_node = None
+        for func_node in ast.dict['functions']:
+            name = func_node.dict['name']
+            self.functions[(name, len(func_node.dict['args']))] = func_node
+            if name == 'main':
+                main_func_node = func_node
+        
         if main_func_node is None:
             super().error(
                 ErrorType.NAME_ERROR,
@@ -53,23 +62,50 @@ class Interpreter(InterpreterBase):
             case 'fcall':
                 self.do_func_call(statement_node)
 
+    def is_variable_defined(self, varname):
+        return varname in self.variables and len(self.variables[varname]) > 0
+
     def do_assignment(self, statement_node):
         target_var_name = statement_node.dict['name']
         expression_value = self.evaluate_expression(statement_node.dict['expression'])
-        self.variable_name_to_value[target_var_name] = expression_value
+        if not self.is_variable_defined(target_var_name):
+            self.scopes[-1].add(target_var_name)
+            self.variables[target_var_name] = [expression_value]
+        else:
+            self.variables[target_var_name][-1] = expression_value
     
-    def do_func_call(self, func_node):
-        args = list(map(self.evaluate_expression, func_node.dict['args']))
-        match func_node.dict['name']:
+    def do_func_call(self, func_call_node):
+        args = list(map(self.evaluate_expression, func_call_node.dict['args']))
+        func_name = func_call_node.dict['name']
+        match func_call_node.dict['name']:
             case 'print':
                 self.run_print(args)
+                return TypedValue('nil', None)
             case 'inputi':
                 return self.run_inputi(args)
-            case unknown_func_name:
-                super().error(
-                    ErrorType.NAME_ERROR,
-                    f"Function {unknown_func_name} has not been defined",
-                )
+            case 'inputs':
+                return self.run_inputs(args)
+        if (func_name, len(args)) not in self.functions:
+            super().error(
+                ErrorType.NAME_ERROR,
+                f"Function {func_name} that takes {len(args)} parameters has not been defined",
+            )
+        
+        # TODO: Return values
+        func_decl_node = self.functions[func_name, len(args)]
+        arg_names = [arg_node.dict['name'] for arg_node in func_decl_node.dict['args']]
+        self.scopes.append(set(arg_names))
+        for arg_name, value in zip(arg_names, args):
+            if not self.is_variable_defined(arg_name):
+                self.variables[arg_name] = [copy.copy(value)]
+            else:
+                self.variables[arg_name].append(copy.copy(value))
+
+        self.run_func(func_decl_node)
+
+        for varname in self.scopes[-1]:
+            self.variables[varname].pop()
+        self.scopes.pop()
      
     def evaluate_expression(self, expression_node) -> TypedValue:
         if expression_node.elem_type in OPERATORS:
@@ -86,12 +122,12 @@ class Interpreter(InterpreterBase):
 
     def get_variable_value(self, variable_node):
         var_name = variable_node.dict['name']
-        if not var_name in self.variable_name_to_value:
+        if not self.is_variable_defined(var_name):
             super().error(
                 ErrorType.NAME_ERROR,
                 f"Variable {var_name} has not been defined",
             )
-        return self.variable_name_to_value[var_name]
+        return self.variables[var_name][-1]
 
     def do_operand_types_match(self, operands, operator):
         for types in VALID_OPERAND_TYPES[operator]:
@@ -116,7 +152,7 @@ class Interpreter(InterpreterBase):
         if not self.do_operand_types_match(operands, operator):
             super().error(
                 ErrorType.TYPE_ERROR,
-                f"Incompatible types {', '.join(operands)} for operation {operator}"
+                f"Incompatible types {', '.join([op.type for op in operands])} for operation {operator}"
             )
         match operator:
             case '+':
@@ -151,8 +187,13 @@ class Interpreter(InterpreterBase):
                 return TypedValue('bool', not op1.value)
 
     def run_print(self, args):
-        string_to_output = "".join([str(x.value) for x in args])
-        super().output(string_to_output)
+        output_strs = []
+        for x in args:
+            if x.type == 'bool':
+                output_strs.append("true" if x.value else "false")
+            else:
+                output_strs.append(str(x.value))
+        super().output("".join(output_strs))
 
     def run_inputi(self, args):
         if len(args) > 1:
@@ -163,3 +204,13 @@ class Interpreter(InterpreterBase):
         if len(args) > 0:
             super().output(args[0].value)
         return TypedValue('int', int(super().get_input()))
+
+    def run_inputs(self, args):
+        if len(args) > 1:
+            super().error(
+                ErrorType.NAME_ERROR,
+                "No inputs() function found that takes >1 parameter",
+            )
+        if len(args) > 0:
+            super().output(args[0].value)
+        return TypedValue('string', super().get_input())
