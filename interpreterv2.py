@@ -1,7 +1,7 @@
 from intbase import InterpreterBase, ErrorType
 from brewparse import parse_program
 
-BINARY_OPERATORS = set(['+', '-', '*', '/', '==', '<', '<=', '>', '>=', '!='])
+BINARY_OPERATORS = set(['+', '-', '*', '/', '==', '<', '<=', '>', '>=', '!=', '&&', '||'])
 UNARY_OPERATORS = set(['neg', '!'])
 OPERATORS = BINARY_OPERATORS | UNARY_OPERATORS
 VALID_OPERAND_TYPES = {
@@ -15,6 +15,8 @@ VALID_OPERAND_TYPES = {
     '>': [['int', 'int']],
     '>=': [['int', 'int']],
     '!=': [['any', 'any']],
+    '&&': [['bool', 'bool']],
+    '||': [['bool', 'bool']],
     'neg': [['int']],
     '!': [['bool']],
 }
@@ -139,6 +141,10 @@ class Interpreter(InterpreterBase):
                 return TypedValue('bool', op1.value > op2.value)
             case '>=':
                 return TypedValue('bool', op1.value >= op2.value)
+            case '&&':
+                return TypedValue('bool', op1.value and op2.value)
+            case '||':
+                return TypedValue('bool', op1.value or op2.value)
             case 'neg':
                 return TypedValue('int', -op1.value)
             case '!':
