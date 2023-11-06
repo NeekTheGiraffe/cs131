@@ -6,26 +6,41 @@ BINARY_OPERATORS = set(['+', '-', '*', '/', '==', '<', '<=', '>', '>=', '!=', '&
 UNARY_OPERATORS = set(['neg', '!'])
 OPERATORS = BINARY_OPERATORS | UNARY_OPERATORS
 VALID_OPERAND_TYPES = {
-    '+': [['int', 'int'], ['string', 'string']],
-    '-': [['int', 'int']],
-    '*': [['int', 'int']],
-    '/': [['int', 'int']],
-    '==': [['any', 'any']],
-    '<': [['int', 'int']],
-    '<=': [['int', 'int']],
-    '>': [['int', 'int']],
-    '>=': [['int', 'int']],
-    '!=': [['any', 'any']],
-    '&&': [['bool', 'bool']],
-    '||': [['bool', 'bool']],
-    'neg': [['int']],
-    '!': [['bool']],
+    '+': [
+        (['int', 'int'], ('bool', 'int')),
+        (['string', 'string'], None),
+    ],
+    '-': [(['int', 'int'], ('bool', 'int'))],
+    '*': [(['int', 'int'], ('bool', 'int'))],
+    '/': [(['int', 'int'], ('bool', 'int'))],
+    '==': [
+        (['bool', 'bool'], ('int', 'bool')),
+        (['any', 'any'], None),
+    ],
+    '!=': [(['any', 'any'], None)],
+    '<': [(['int', 'int'], None)],
+    '<=': [(['int', 'int'], None)],
+    '>': [(['int', 'int'], None)],
+    '>=': [(['int', 'int'], None)],
+    '&&': [(['bool', 'bool'], ('int', 'bool'))],
+    '||': [(['bool', 'bool'], ('int', 'bool'))],
+    'neg': [(['int'], None)],
+    '!': [(['bool'], ('int', 'bool'))],
+}
+COERCIONS = {
+    ('int', 'bool'): lambda x: TypedValue('bool', x.value != 0),
+    ('bool', 'int'): lambda x: TypedValue('int', 1 if x.value else 0),
 }
 
 class Closure:
     def __init__(self, definition_node, free_vars):
         self.definition = definition_node
         self.free_vars = free_vars
+
+    def __deepcopy__(self, memo):
+        # Don't copy the definition node - it will not be mutated,
+        # so copying a whole subtree of the AST would be unnecessary
+        return Closure(self.definition, copy.deepcopy(self.free_vars, memo))
 
 class TypedValue:
     def __init__(self, type: str, value: int | str | bool | Closure | dict[int, any] | None):
@@ -107,7 +122,8 @@ class Interpreter(InterpreterBase):
             self.scopes[-1].add(target_var_name)
             self.variables[target_var_name] = [expression_value]
         else:
-            self.variables[target_var_name][-1] = expression_value
+            self.variables[target_var_name][-1].type = expression_value.type
+            self.variables[target_var_name][-1].value = expression_value.value
     
     def do_func_call(self, func_call_node):
         args = list(map(self.evaluate_expression, func_call_node.dict['args']))
@@ -134,11 +150,13 @@ class Interpreter(InterpreterBase):
                     f"Function {func_name} that takes {len(args)} parameters has not been defined",
                 )
             func_decl_node = func_object.value[len(args)]
+            free_vars = {}
         elif func_object.type == 'func':
             func_decl_node = func_object.value.definition
+            free_vars = func_object.value.free_vars
             if len(args) != len(func_decl_node.dict['args']):
                 super().error(
-                    ErrorType.NAME_ERROR,
+                    ErrorType.TYPE_ERROR,
                     f"Function {func_name} takes {len(func_decl_node.dict['args'])} parameters but {len(args)} were given",
                 )
         else:
@@ -148,12 +166,21 @@ class Interpreter(InterpreterBase):
             )
 
         arg_names = [arg_node.dict['name'] for arg_node in func_decl_node.dict['args']]
-        self.scopes.append(set(arg_names))
-        for arg_name, value in zip(arg_names, args):
+        arg_types = [arg_node.elem_type for arg_node in func_decl_node.dict['args']]
+        for arg_name, value, arg_type in zip(arg_names, args, arg_types):
+            value_to_pass = value if arg_type == 'refarg' else copy.deepcopy(value)
             if not self.is_variable_defined(arg_name):
-                self.variables[arg_name] = [copy.deepcopy(value)]
+                self.variables[arg_name] = [value_to_pass]
             else:
-                self.variables[arg_name].append(copy.deepcopy(value))
+                self.variables[arg_name].append(value_to_pass)
+        
+        arg_names_set = set(arg_names)
+        unshadowed_free_vars = [(k, v) for k, v in free_vars.items() if k not in arg_names_set]
+        for var_name, value in unshadowed_free_vars:
+            # The variable is guaranteed to have been defined at some point,
+            # so no need to check
+            self.variables[var_name].append(value)
+        self.scopes.append(arg_names_set | { k for k, _ in unshadowed_free_vars })
 
         return_val = self.run_statements(func_decl_node.dict['statements'])
 
@@ -166,7 +193,7 @@ class Interpreter(InterpreterBase):
         return return_val
     
     def do_if_statement(self, if_statement_node):
-        condition = self.evaluate_expression(if_statement_node.dict['condition'])
+        condition = self.try_coerce_to_bool(self.evaluate_expression(if_statement_node.dict['condition']))
         if condition.type != 'bool':
             super().error(
                 ErrorType.TYPE_ERROR,
@@ -187,7 +214,7 @@ class Interpreter(InterpreterBase):
 
         return_val = None
         while True:
-            condition = self.evaluate_expression(while_statement_node.dict['condition'])
+            condition = self.try_coerce_to_bool(self.evaluate_expression(while_statement_node.dict['condition']))
             if condition.type != 'bool':
                 super().error(
                     ErrorType.TYPE_ERROR,
@@ -212,6 +239,8 @@ class Interpreter(InterpreterBase):
                 return self.do_func_call(expression_node)
             case 'var':
                 return self.get_variable_value(expression_node)
+            case 'lambda':
+                return self.evaluate_lambda(expression_node)
             case 'nil':
                 return TypedValue('nil', None)
             case 'int' | 'string' | 'bool':
@@ -224,18 +253,35 @@ class Interpreter(InterpreterBase):
                 ErrorType.NAME_ERROR,
                 f"Variable {var_name} has not been defined",
             )
-        return self.variables[var_name][-1]
+        typed_value = self.variables[var_name][-1]
+        if typed_value.type == 'overloaded_func':
+            super().error(
+                ErrorType.NAME_ERROR,
+                f"Function {var_name} has multiple overloaded versions",
+            )
+        return typed_value
+    
+    def evaluate_lambda(self, lambda_node):
+        free_vars = { var_name: copy.deepcopy(values[-1]) for var_name, values in self.variables.items() if len(values) > 0 }
+        return TypedValue('func', Closure(lambda_node, free_vars))
 
-    def do_operand_types_match(self, operands, operator):
-        for types in VALID_OPERAND_TYPES[operator]:
+    def check_operands_and_coerce(self, operands, operator):
+        for type_rules in VALID_OPERAND_TYPES[operator]:
+            types, valid_coercion = type_rules
             match = True
-            for operand, type in zip(operands, types):
-                if type != 'any' and operand.type != type:
-                    match = False
-                    break
+            coerced = []
+            for operand, expected_type in zip(operands, types):
+                if expected_type == 'any' or operand.type == expected_type:
+                    coerced.append(operand)
+                    continue
+                if valid_coercion == (operand.type, expected_type):
+                    coerced.append(COERCIONS[(operand.type, expected_type)](operand))
+                    continue
+                match = False
+                break
             if match:
-                return True
-        return False
+                return True, coerced
+        return False, None
 
     def evaluate_operation(self, expression_node) -> TypedValue:
         operator = expression_node.elem_type
@@ -246,11 +292,17 @@ class Interpreter(InterpreterBase):
         else:
             operands = [op1]
 
-        if not self.do_operand_types_match(operands, operator):
+        valid_operands, coerced = self.check_operands_and_coerce(operands, operator)
+        if not valid_operands:
             super().error(
                 ErrorType.TYPE_ERROR,
                 f"Incompatible types {', '.join([op.type for op in operands])} for operation {operator}"
             )
+        
+        op1 = coerced[0]
+        if operator in BINARY_OPERATORS:
+            op2 = coerced[1]
+        
         match operator:
             case '+':
                 return TypedValue(op1.type, op1.value + op2.value)
@@ -282,6 +334,11 @@ class Interpreter(InterpreterBase):
                 return TypedValue('int', -op1.value)
             case '!':
                 return TypedValue('bool', not op1.value)
+
+    def try_coerce_to_bool(self, integer_or_bool: TypedValue):
+        if integer_or_bool.type == 'int':
+            return COERCIONS[('int', 'bool')](integer_or_bool)
+        return integer_or_bool
 
     def run_print(self, args):
         output_strs = []
