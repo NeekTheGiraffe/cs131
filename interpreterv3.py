@@ -22,8 +22,13 @@ VALID_OPERAND_TYPES = {
     '!': [['bool']],
 }
 
+class Closure:
+    def __init__(self, definition_node, free_vars):
+        self.definition = definition_node
+        self.free_vars = free_vars
+
 class TypedValue:
-    def __init__(self, type: str, value: int | str | bool | None):
+    def __init__(self, type: str, value: int | str | bool | Closure | dict[int, any] | None):
         self.type = type
         self.value = value
     
@@ -42,13 +47,23 @@ class Interpreter(InterpreterBase):
     def run(self, program):
         ast = parse_program(program)
         self.variables: dict[str, list[TypedValue]] = {} # Maps variable names to a list of shadowed scopes
-        self.functions = {} # Maps function names to function nodes
-        self.scopes = [set()]
+        self.scopes: list[set[str]] = [set()]
 
         main_func_node = None
         for func_node in ast.dict['functions']:
             name = func_node.dict['name']
-            self.functions[(name, len(func_node.dict['args']))] = func_node
+            if self.is_variable_defined(name):
+                if self.variables[name][-1].type == 'overloaded_func':
+                    self.variables[name][-1].value[len(func_node.dict['args'])] = func_node
+                else:
+                    first_overload_node = self.variables[name][-1].value.definition
+                    self.variables[name][-1] = TypedValue('overloaded_func', {
+                        len(first_overload_node.dict['args']): first_overload_node,
+                        len(func_node.dict['args']): func_node,
+                    })
+            else:
+                self.scopes[-1].add(name)
+                self.variables[name] = [TypedValue('func', Closure(func_node, {}))]
             if name == 'main':
                 main_func_node = func_node
         
@@ -105,13 +120,33 @@ class Interpreter(InterpreterBase):
                 return self.run_inputi(args)
             case 'inputs':
                 return self.run_inputs(args)
-        if (func_name, len(args)) not in self.functions:
+        if not self.is_variable_defined(func_name):
             super().error(
                 ErrorType.NAME_ERROR,
                 f"Function {func_name} that takes {len(args)} parameters has not been defined",
             )
-        
-        func_decl_node = self.functions[func_name, len(args)]
+
+        func_object = self.variables[func_name][-1]
+        if func_object.type == 'overloaded_func':
+            if len(args) not in func_object.value:
+                super().error(
+                    ErrorType.NAME_ERROR,
+                    f"Function {func_name} that takes {len(args)} parameters has not been defined",
+                )
+            func_decl_node = func_object.value[len(args)]
+        elif func_object.type == 'func':
+            func_decl_node = func_object.value.definition
+            if len(args) != len(func_decl_node.dict['args']):
+                super().error(
+                    ErrorType.NAME_ERROR,
+                    f"Function {func_name} takes {len(func_decl_node.dict['args'])} parameters but {len(args)} were given",
+                )
+        else:
+            super().error(
+                ErrorType.TYPE_ERROR,
+                f"Trying to call {func_name} as a function, but it is of type {func_object.type}",
+            )
+
         arg_names = [arg_node.dict['name'] for arg_node in func_decl_node.dict['args']]
         self.scopes.append(set(arg_names))
         for arg_name, value in zip(arg_names, args):
