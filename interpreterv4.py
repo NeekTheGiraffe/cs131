@@ -317,7 +317,6 @@ class Interpreter(InterpreterBase):
         return typed_value
     
     def get_member_value(self, var_name: str, member_name: str) -> TypedValue:
-        # TODO: Prototype lookup
         if not self.is_variable_defined(var_name):
             super().error(
                 ErrorType.NAME_ERROR,
@@ -329,12 +328,17 @@ class Interpreter(InterpreterBase):
                 ErrorType.TYPE_ERROR,
                 f"Attempting to look up member '{member_name}' in {variable.type} '{variable}'"
             )
-        if member_name not in variable.value:
-            super().error(
-                ErrorType.NAME_ERROR,
-                f"Member '{member_name}' does not exist in object '{variable}'"
-            )
-        return variable.value[member_name]
+        obj = variable
+        if member_name in obj.value:
+            return obj.value[member_name]
+        while 'proto' in obj.value:
+            obj = obj.value['proto']
+            if member_name in obj.value:
+                return obj.value[member_name]
+        super().error(
+            ErrorType.NAME_ERROR,
+            f"Member '{member_name}' does not exist in object '{variable}'"
+        )
     
     def evaluate_lambda_definition(self, lambda_node):
         free_vars = {}
@@ -347,7 +351,6 @@ class Interpreter(InterpreterBase):
                 free_vars[var_name] = copy.copy(values[-1])
             else:
                 free_vars[var_name] = copy.deepcopy(values[-1])
-        #free_vars = { var_name: copy.deepcopy(values[-1]) for var_name, values in self.variables.items() if len(values) > 0 }
         return TypedValue('func', Closure(lambda_node, free_vars))
 
     def check_operands_and_coerce(self, operands, operator):
