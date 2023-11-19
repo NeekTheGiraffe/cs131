@@ -106,6 +106,8 @@ class Interpreter(InterpreterBase):
                 return None
             case 'fcall':
                 return self.do_func_call(statement_node)
+            case 'mcall':
+                return self.do_method_call(statement_node)
             case 'if':
                 return self.do_if_statement(statement_node)
             case 'while':
@@ -115,12 +117,13 @@ class Interpreter(InterpreterBase):
                     return TypedValue('nil', None)
                 return copy.deepcopy(self.evaluate_expression(statement_node.dict['expression']))
 
-    def is_variable_defined(self, varname):
+    def is_variable_defined(self, varname: str) -> bool:
         return varname in self.variables and len(self.variables[varname]) > 0
 
     def do_assignment(self, statement_node: Element):
         target = statement_node.dict['name'].split('.')
         expression_value = self.evaluate_expression(statement_node.dict['expression'])
+        self.print_if_trace(f'Assign {target} = {expression_value}')
         if len(target) == 1:
             self.do_var_assignment(target[0], expression_value)
         else:
@@ -152,29 +155,42 @@ class Interpreter(InterpreterBase):
         #    obj[member_name].type = value.type
         #    obj[member_name].value = value.value
 
-    def do_func_call(self, func_call_node):
-        args = list(map(self.evaluate_expression, func_call_node.dict['args']))
+    def do_method_call(self, method_call_node: Element):
+        #self.print_if_trace('Method call')
+        var_name = method_call_node.dict['objref']
+        method_name = method_call_node.dict['name']
+        method_val = self.get_member_value(var_name, method_name)
+        return self.run_function(method_val, method_call_node.dict['args'],
+                                 method_this=self.variables[var_name][-1], debug_func_name=f"{var_name}.{method_name}")
+
+    def do_func_call(self, func_call_node: Element):
         func_name = func_call_node.dict['name']
-        match func_call_node.dict['name']:
+        args = func_call_node.dict['args']
+        if self.is_variable_defined(func_name):
+            return self.run_function(self.variables[func_name][-1], func_call_node.dict['args'],
+                                     debug_func_name=func_name)
+        match func_name:
             case 'print':
                 self.run_print(args)
                 return TypedValue('nil', None)
             case 'inputi':
                 return self.run_inputi(args)
             case 'inputs':
-                return self.run_inputs(args)
-        if not self.is_variable_defined(func_name):
-            super().error(
-                ErrorType.NAME_ERROR,
-                f"Function {func_name} that takes {len(args)} parameters has not been defined",
-            )
+                return self.run_inputs(args)    
+        super().error(
+            ErrorType.NAME_ERROR,
+            f"Function {func_name} that takes {len(args)} parameters has not been defined",
+        )
+    
+    def evaluate_args(self, arg_node_list: list[Element]) -> list[TypedValue]:
+        return list(map(self.evaluate_expression, arg_node_list))
 
-        func_object = self.variables[func_name][-1]
+    def run_function(self, func_object: TypedValue, args: list[Element], debug_func_name: str, method_this:TypedValue|None=None):
         if func_object.type == 'overloaded_func':
             if len(args) not in func_object.value:
                 super().error(
                     ErrorType.NAME_ERROR,
-                    f"Function {func_name} that takes {len(args)} parameters has not been defined",
+                    f"Function {debug_func_name} that takes {len(args)} parameters has not been defined",
                 )
             func_decl_node = func_object.value[len(args)]
             free_vars = {}
@@ -184,17 +200,18 @@ class Interpreter(InterpreterBase):
             if len(args) != len(func_decl_node.dict['args']):
                 super().error(
                     ErrorType.TYPE_ERROR,
-                    f"Function {func_name} takes {len(func_decl_node.dict['args'])} parameters but {len(args)} were given",
+                    f"Function {debug_func_name} takes {len(func_decl_node.dict['args'])} parameters but {len(args)} were given",
                 )
         else:
             super().error(
                 ErrorType.TYPE_ERROR,
-                f"Trying to call {func_name} as a function, but it is of type {func_object.type}",
+                f"Trying to call {debug_func_name} as a function, but it is of type {func_object.type}",
             )
 
+        arg_values = self.evaluate_args(args)
         arg_names = [arg_node.dict['name'] for arg_node in func_decl_node.dict['args']]
-        arg_types = [arg_node.elem_type for arg_node in func_decl_node.dict['args']]
-        for arg_name, value, arg_type in zip(arg_names, args, arg_types):
+        arg_passing_schemes = [arg_node.elem_type for arg_node in func_decl_node.dict['args']]
+        for arg_name, value, arg_type in zip(arg_names, arg_values, arg_passing_schemes):
             value_to_pass = value if arg_type == 'refarg' else copy.deepcopy(value)
             if not self.is_variable_defined(arg_name):
                 self.variables[arg_name] = [value_to_pass]
@@ -203,6 +220,11 @@ class Interpreter(InterpreterBase):
         
         arg_names_set = set(arg_names)
         unshadowed_free_vars = [(k, v) for k, v in free_vars.items() if k not in arg_names_set]
+        if method_this:
+            unshadowed_free_vars.append(('this', method_this))
+            if not self.is_variable_defined('this'):
+                self.variables['this'] = []
+        
         for var_name, value in unshadowed_free_vars:
             # The variable is guaranteed to have been defined at some point,
             # so no need to check
@@ -218,7 +240,7 @@ class Interpreter(InterpreterBase):
         if return_val is None:
             return TypedValue('nil', None)
         return return_val
-    
+
     def do_if_statement(self, if_statement_node):
         condition = self.try_coerce_to_bool(self.evaluate_expression(if_statement_node.dict['condition']))
         if condition.type != 'bool':
@@ -278,15 +300,15 @@ class Interpreter(InterpreterBase):
     def get_variable_value(self, variable_node: Element) -> TypedValue:
         var_name_components = variable_node.dict['name'].split('.')
         var_name = var_name_components[0]
+        if len(var_name_components) == 2:
+            return self.get_member_value(var_name, var_name_components[1])
+        
         if not self.is_variable_defined(var_name):
             super().error(
                 ErrorType.NAME_ERROR,
                 f"Variable {var_name} has not been defined",
             )
         typed_value = self.variables[var_name][-1]
-        if len(var_name_components) == 2:
-            return self.get_member_value(typed_value, var_name_components[1])
-
         if typed_value.type == 'overloaded_func':
             super().error(
                 ErrorType.NAME_ERROR,
@@ -294,8 +316,14 @@ class Interpreter(InterpreterBase):
             )
         return typed_value
     
-    def get_member_value(self, variable: TypedValue, member_name: str) -> TypedValue:
+    def get_member_value(self, var_name: str, member_name: str) -> TypedValue:
         # TODO: Prototype lookup
+        if not self.is_variable_defined(var_name):
+            super().error(
+                ErrorType.NAME_ERROR,
+                f"Variable '{var_name}' has not been defined",
+            )
+        variable = self.variables[var_name][-1]
         if variable.type != 'object':
             super().error(
                 ErrorType.TYPE_ERROR,
@@ -396,8 +424,9 @@ class Interpreter(InterpreterBase):
         return integer_or_bool
 
     def run_print(self, args):
+        arg_vals = self.evaluate_args(args)
         output_strs = []
-        for x in args:
+        for x in arg_vals:
             if x.type == 'bool':
                 output_strs.append("true" if x.value else "false")
             elif x.type == 'nil':
@@ -413,7 +442,8 @@ class Interpreter(InterpreterBase):
                 "No inputi() function found that takes >1 parameter",
             )
         if len(args) > 0:
-            super().output(args[0].value)
+            arg_vals = self.evaluate_args(args)
+            super().output(arg_vals[0].value)
         return TypedValue('int', int(super().get_input()))
 
     def run_inputs(self, args):
@@ -423,5 +453,6 @@ class Interpreter(InterpreterBase):
                 "No inputs() function found that takes >1 parameter",
             )
         if len(args) > 0:
-            super().output(args[0].value)
+            arg_vals = self.evaluate_args(args)
+            super().output(arg_vals[0].value)
         return TypedValue('string', super().get_input())
