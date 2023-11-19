@@ -337,7 +337,17 @@ class Interpreter(InterpreterBase):
         return variable.value[member_name]
     
     def evaluate_lambda_definition(self, lambda_node):
-        free_vars = { var_name: copy.deepcopy(values[-1]) for var_name, values in self.variables.items() if len(values) > 0 }
+        free_vars = {}
+        for var_name, values in self.variables.items():
+            if len(values) == 0:
+                continue
+            if values[-1].type == 'object' or values[-1].type == 'func':
+                free_vars[var_name] = values[-1]
+            elif values[-1].type == 'overloaded_func':
+                free_vars[var_name] = copy.copy(values[-1])
+            else:
+                free_vars[var_name] = copy.deepcopy(values[-1])
+        #free_vars = { var_name: copy.deepcopy(values[-1]) for var_name, values in self.variables.items() if len(values) > 0 }
         return TypedValue('func', Closure(lambda_node, free_vars))
 
     def check_operands_and_coerce(self, operands, operator):
