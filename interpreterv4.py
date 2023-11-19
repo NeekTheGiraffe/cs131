@@ -1,5 +1,7 @@
+from __future__ import annotations
 from intbase import InterpreterBase, ErrorType
 from brewparse import parse_program
+from element import Element
 import copy, sys
 
 BINARY_OPERATORS = set(['+', '-', '*', '/', '==', '<', '<=', '>', '>=', '!=', '&&', '||'])
@@ -44,7 +46,7 @@ class Closure:
         return Closure(self.definition, copy.deepcopy(self.free_vars, memo))
 
 class TypedValue:
-    def __init__(self, type: str, value: int | str | bool | Closure | dict[int, any] | None):
+    def __init__(self, type: str, value: int | str | bool | Closure | dict[int, Element] | dict[str, TypedValue] | None):
         self.type = type
         self.value = value
     
@@ -116,16 +118,40 @@ class Interpreter(InterpreterBase):
     def is_variable_defined(self, varname):
         return varname in self.variables and len(self.variables[varname]) > 0
 
-    def do_assignment(self, statement_node):
-        target_var_name = statement_node.dict['name']
+    def do_assignment(self, statement_node: Element):
+        target = statement_node.dict['name'].split('.')
         expression_value = self.evaluate_expression(statement_node.dict['expression'])
-        if not self.is_variable_defined(target_var_name):
-            self.scopes[-1].add(target_var_name)
-            self.variables[target_var_name] = [copy.copy(expression_value)]
+        if len(target) == 1:
+            self.do_var_assignment(target[0], expression_value)
         else:
-            self.variables[target_var_name][-1].type = expression_value.type
-            self.variables[target_var_name][-1].value = expression_value.value
-    
+            self.do_member_assignment(target[0], target[1], expression_value)
+
+    def do_var_assignment(self, var_name: str, value: TypedValue):
+        if not self.is_variable_defined(var_name):
+            self.scopes[-1].add(var_name)
+            self.variables[var_name] = [copy.copy(value)]
+        else:
+            self.variables[var_name][-1].type = value.type
+            self.variables[var_name][-1].value = value.value
+
+    def do_member_assignment(self, var_name: str, member_name: str, value: TypedValue):
+        if not self.is_variable_defined(var_name):
+            super().error(
+                ErrorType.NAME_ERROR,
+                f"Attempting to assign member '{member_name}' to undefined variable '{var_name}'",
+            )
+        obj = self.variables[var_name][-1]
+        if obj.type != 'object':
+            super().error(
+                ErrorType.TYPE_ERROR,
+                f"Attempting to assign member '{member_name}' to {obj.type} '{var_name}'",
+            )
+        #if not member_name in obj.value:
+        obj.value[member_name] = copy.copy(value)
+        #else:
+        #    obj[member_name].type = value.type
+        #    obj[member_name].value = value.value
+
     def do_func_call(self, func_call_node):
         args = list(map(self.evaluate_expression, func_call_node.dict['args']))
         func_name = func_call_node.dict['name']
@@ -241,20 +267,26 @@ class Interpreter(InterpreterBase):
             case 'var':
                 return self.get_variable_value(expression_node)
             case 'lambda':
-                return self.evaluate_lambda(expression_node)
+                return self.evaluate_lambda_definition(expression_node)
             case 'nil':
                 return TypedValue('nil', None)
+            case '@':
+                return TypedValue('object', {})
             case 'int' | 'string' | 'bool':
                 return TypedValue(expression_node.elem_type, expression_node.dict['val'])
 
-    def get_variable_value(self, variable_node):
-        var_name = variable_node.dict['name']
+    def get_variable_value(self, variable_node: Element) -> TypedValue:
+        var_name_components = variable_node.dict['name'].split('.')
+        var_name = var_name_components[0]
         if not self.is_variable_defined(var_name):
             super().error(
                 ErrorType.NAME_ERROR,
                 f"Variable {var_name} has not been defined",
             )
         typed_value = self.variables[var_name][-1]
+        if len(var_name_components) == 2:
+            return self.get_member_value(typed_value, var_name_components[1])
+
         if typed_value.type == 'overloaded_func':
             super().error(
                 ErrorType.NAME_ERROR,
@@ -262,7 +294,21 @@ class Interpreter(InterpreterBase):
             )
         return typed_value
     
-    def evaluate_lambda(self, lambda_node):
+    def get_member_value(self, variable: TypedValue, member_name: str) -> TypedValue:
+        # TODO: Prototype lookup
+        if variable.type != 'object':
+            super().error(
+                ErrorType.TYPE_ERROR,
+                f"Attempting to look up member '{member_name}' in {variable.type} '{variable}'"
+            )
+        if member_name not in variable.value:
+            super().error(
+                ErrorType.NAME_ERROR,
+                f"Member '{member_name}' does not exist in object '{variable}'"
+            )
+        return variable.value[member_name]
+    
+    def evaluate_lambda_definition(self, lambda_node):
         free_vars = { var_name: copy.deepcopy(values[-1]) for var_name, values in self.variables.items() if len(values) > 0 }
         return TypedValue('func', Closure(lambda_node, free_vars))
 
@@ -316,9 +362,9 @@ class Interpreter(InterpreterBase):
             case '/':
                 return TypedValue('int', op1.value // op2.value)
             case '==':
-                return TypedValue('bool', op1.type == op2.type and op1.value == op2.value)
+                return TypedValue('bool', self.are_values_equal(op1, op2))
             case '!=':
-                return TypedValue('bool', op1.type != op2.type or op1.value != op2.value)
+                return TypedValue('bool', not self.are_values_equal(op1, op2))
             case '<':
                 return TypedValue('bool', op1.value < op2.value)
             case '<=':
@@ -336,7 +382,15 @@ class Interpreter(InterpreterBase):
             case '!':
                 return TypedValue('bool', not op1.value)
 
-    def try_coerce_to_bool(self, integer_or_bool: TypedValue):
+    def are_values_equal(self, op1: TypedValue, op2: TypedValue) -> bool:
+        if op1.type != op2.type:
+            return False
+        if op1.type == 'object':
+            return op1.value is op2.value
+        else:
+            return op1.value == op2.value
+
+    def try_coerce_to_bool(self, integer_or_bool: TypedValue) -> TypedValue:
         if integer_or_bool.type == 'int':
             return COERCIONS[('int', 'bool')](integer_or_bool)
         return integer_or_bool
