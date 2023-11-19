@@ -14,6 +14,7 @@ VALID_OPERAND_TYPES = {
     '*': [(['int', 'int'], ('bool', 'int'))],
     '/': [(['int', 'int'], ('bool', 'int'))],
     '==': [
+        (['int', 'int'], None),
         (['bool', 'bool'], ('int', 'bool')),
         (['any', 'any'], None),
     ],
@@ -120,7 +121,7 @@ class Interpreter(InterpreterBase):
         expression_value = self.evaluate_expression(statement_node.dict['expression'])
         if not self.is_variable_defined(target_var_name):
             self.scopes[-1].add(target_var_name)
-            self.variables[target_var_name] = [expression_value]
+            self.variables[target_var_name] = [copy.copy(expression_value)]
         else:
             self.variables[target_var_name][-1].type = expression_value.type
             self.variables[target_var_name][-1].value = expression_value.value
