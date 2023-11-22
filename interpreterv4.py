@@ -123,7 +123,7 @@ class Interpreter(InterpreterBase):
     def do_assignment(self, statement_node: Element):
         target = statement_node.dict['name'].split('.')
         expression_value = self.evaluate_expression(statement_node.dict['expression'])
-        self.print_if_trace(f'Assign {target} = {expression_value}')
+        # self.print_if_trace(f'Assign {target} = {expression_value}')
         if len(target) == 1:
             self.do_var_assignment(target[0], expression_value)
         else:
@@ -149,6 +149,11 @@ class Interpreter(InterpreterBase):
                 ErrorType.TYPE_ERROR,
                 f"Attempting to assign member '{member_name}' to {obj.type} '{var_name}'",
             )
+        if member_name == 'proto' and value.type != 'object' and value.type != 'nil':
+            super().error(
+                ErrorType.TYPE_ERROR,
+                f"Attempting to assign {obj.type} to '{var_name}.proto' (must be object or nil)",
+            )
         #if not member_name in obj.value:
         obj.value[member_name] = copy.copy(value)
         #else:
@@ -156,7 +161,6 @@ class Interpreter(InterpreterBase):
         #    obj[member_name].value = value.value
 
     def do_method_call(self, method_call_node: Element):
-        #self.print_if_trace('Method call')
         var_name = method_call_node.dict['objref']
         method_name = method_call_node.dict['name']
         method_val = self.get_member_value(var_name, method_name)
@@ -286,6 +290,8 @@ class Interpreter(InterpreterBase):
         match expression_node.elem_type:
             case 'fcall':
                 return self.do_func_call(expression_node)
+            case 'mcall':
+                return self.do_method_call(expression_node)
             case 'var':
                 return self.get_variable_value(expression_node)
             case 'lambda':
@@ -331,7 +337,7 @@ class Interpreter(InterpreterBase):
         obj = variable
         if member_name in obj.value:
             return obj.value[member_name]
-        while 'proto' in obj.value:
+        while 'proto' in obj.value and obj.value['proto'].type == 'object':
             obj = obj.value['proto']
             if member_name in obj.value:
                 return obj.value[member_name]
