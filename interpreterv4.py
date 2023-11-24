@@ -152,7 +152,7 @@ class Interpreter(InterpreterBase):
         if member_name == 'proto' and value.type != 'object' and value.type != 'nil':
             super().error(
                 ErrorType.TYPE_ERROR,
-                f"Attempting to assign {obj.type} to '{var_name}.proto' (must be object or nil)",
+                f"Attempting to assign {value.type} to '{var_name}.proto' (must be object or nil)",
             )
         #if not member_name in obj.value:
         obj.value[member_name] = copy.copy(value)
@@ -189,7 +189,7 @@ class Interpreter(InterpreterBase):
     def evaluate_args(self, arg_node_list: list[Element]) -> list[TypedValue]:
         return list(map(self.evaluate_expression, arg_node_list))
 
-    def run_function(self, func_object: TypedValue, args: list[Element], debug_func_name: str, method_this:TypedValue|None=None):
+    def run_function(self, func_object: TypedValue, args: list[Element], debug_func_name: str, method_this: TypedValue|None=None):
         if func_object.type == 'overloaded_func':
             if len(args) not in func_object.value:
                 super().error(
@@ -202,6 +202,11 @@ class Interpreter(InterpreterBase):
             func_decl_node = func_object.value.definition
             free_vars = func_object.value.free_vars
             if len(args) != len(func_decl_node.dict['args']):
+                if method_this is not None:
+                    super().error(
+                        ErrorType.NAME_ERROR,
+                        f"Method {debug_func_name} takes {len(func_decl_node.dict['args'])} parameters but {len(args)} were given",
+                    )
                 super().error(
                     ErrorType.TYPE_ERROR,
                     f"Function {debug_func_name} takes {len(func_decl_node.dict['args'])} parameters but {len(args)} were given",
