@@ -1,0 +1,116 @@
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  padding-top: 1.4rem;
+  padding-bottom: 1.4rem;
+  text-align: center;
+}
+
+.control-panel h3 {
+  align-self: flex-end;
+}
+
+.control-panel select {
+  margin-left: auto;
+  margin-bottom: 4px;
+  margin-right: 4px;
+  margin-top: 4px;
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  border-radius: 10px;
+  font-size: 1rem;
+  padding-left: 0.2rem;
+}
+
+.run-button {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+/* Code blocks */
+
+.code-block {
+  width:100%;
+  max-width: 700px;
+  margin: auto;
+  border: 1px solid #666;
+  border-radius: 6px;
+  padding: 8px;
+  box-sizing: border-box;
+  font-size: 1rem;
+  background-color: #080808;
+}
+
+.code-block textarea {
+  border-radius: 6px;
+}
+
+.output {
+  height: 100px;
+  background-color: #181818;
+}
+
+@media (prefers-color-scheme: light) {
+  .code-block {
+    background-color: #eeeeee;
+  }
+  .output {
+    background-color: #dddddd;
+  }
+}
+
+.program {
+  min-height: 11rem;
+}
+
+.control-panel {
+  display: flex;
+}
+
+.heading {
+  margin-top: 0rem;
+  margin-bottom: 0rem;
+}
+
+.subheading {
+  margin-top: 0.5rem;
+  font-size: 1rem;
+  font-weight: 500;
+  color: #999;
+}
+
+.logo {
+  height: 6rem;
+  padding: 1.5rem;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2rem #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2rem #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.read-the-docs {
+  color: #888;
+}
+
+textarea {
+  resize: none;
+}
