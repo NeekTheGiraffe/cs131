@@ -1,25 +1,100 @@
-# CS 131 Fall 2023: Project Starter
+# CS 131 - Brewin' Interpreter
 
-Hey there! This is a template repository that contains the necessary boilerplate for [CS 131](https://ucla-cs-131.github.io/fall-23-website/)'s quarter-long project: making an interpreter. The project specs are as follows:
+This is my quarter-long project for [CS 131](https://ucla-cs-131.github.io/fall-23-website/)
+at UCLA: an interpreter for a custom programming language, Brewin'. The
+interpreter is implemented in Python.
 
-1. [Project #1 Spec](https://docs.google.com/document/d/1RgPjCH_LtEA-e-SJhtB0hDKn6tMk5YNBcAyhAwFJehc/edit#heading=h.63zoibjlqvny)
+In addition to the interpreter, this repository contains a React application
+(`frontend/`) and Flask server (`server.py`) for running Brewin' code over the
+web.
 
-There are three stages to the project; students are currently at the first. Thus, this folder contains the necessary bootstrapping code:
+## Key features
 
-- `intbase.py`, the base class and enum definitions for the interpreter
-- `brewparse.py`, which contains the `parse_program` function to parse Brewin programs
-- `brewlex.py`, which contains helper functions for brewparse.py
+- Several data types: integer, string, bool (v2+), nil (v2+), function/lambda
+  (v3+), object (v4)
+- `if` and `while` statements (v2+)
+- Dynamic typing
+- Dynamic scoping (v2+)
+- First-class function support (v3+)
+- Pass-by-value (v2+) and pass-by-reference (v3+) parameter semantics
+- Limited type coercions (v3+)
+- Objects with prototypal inheritance (v4+)
 
-Some notes on your submission (for Project 1)
+## Running locally
 
-1. You **must have a top-level, versioned `interpreterv1.py` file** that **exports the `Interpreter` class**. If not, **your code will not run on our autograder**.
-2. You may also submit one or more additional `.py` modules that your interpreter uses, if you decide to break up your solution into multiple `.py` files.
-3. You **should not modify/submit `intbase.py`, `brewparse.py`, or `brewlex.py`**; we will use our own when grading.
+### Quick start
 
-You can find out more about our autograder, including how to run it, in [its accompanying repo](https://github.com/UCLA-CS-131/fall-23-autograder).
+1. Clone the repository:
+
+```
+git clone --recurse-submodules https://github.com/NeekTheGiraffe/cs131.git
+cd cs131
+```
+
+2. Create a `main.brewin` file. Here is an example:
+
+```
+/* main.brewin */
+
+func main() {
+    a = 1;
+    while (a < 10) {
+        print("Hello ", a);
+        a = a + 1;
+    }
+}
+```
+
+3. Run the interpreter:
+
+```
+python3 main.py
+```
+
+### CLI
+
+```
+❯ python3 main.py --help
+usage: Brewin' Interpreter [-h] [-i INTERPRETER] [filename]
+
+Run a Brewin' program
+
+positional arguments:
+  filename              the Brewin' source file
+
+options:
+  -h, --help            show this help message and exit
+  -i INTERPRETER, --interpreter INTERPRETER
+                        interpreter version to use from 1-4
+```
+
+## Testing
+
+1. Ensure the autograder submodule is present:
+
+```
+git submodule init
+git submodule update
+```
+
+2. From the project root directory:
+
+```
+python test.py [version]
+```
 
 ## Licensing and Attribution
 
-This is an unlicensed repository; even though the source code is public, it is **not** governed by an open-source license.
+I am responsible for writing:
+- The interpreters: `interpreter*.py`
+- The main/test entry points for this repo: `main.py`, `test.py`
+- The Flask server: `server.py`
+- The frontend app: `frontend/`
 
-This code was primarily written by [Carey Nachenberg](http://careynachenberg.weebly.com/), with support from his TAs for the [Fall 2023 iteration of CS 131](https://ucla-cs-131.github.io/fall-23-website/).
+For the client-server component, I was heavily inspired by
+[Barista](https://barista-f23.fly.dev), the web interface to the course's
+canonically-correct interpreter. I am using the same high-level tech stack as
+Barista (React and Flask), but the implementation is completely my own.
+
+The other Python files were primarily written by [Carey Nachenberg](http://careynachenberg.weebly.com/),
+with support from his TAs for the [Fall 2023 iteration of CS 131](https://ucla-cs-131.github.io/fall-23-website/).

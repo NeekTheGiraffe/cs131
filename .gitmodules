@@ -1,0 +1,3 @@
+[submodule "autograder"]
+	path = autograder
+	url = https://github.com/UCLA-CS-131/fall-23-autograder.git
