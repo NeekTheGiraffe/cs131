@@ -12,11 +12,7 @@ TIMEOUT = 5
 app = Flask(__name__)
 
 env = environ.get("FLASK_ENV")
-origins = ["http://localhost:5173"] if env != "production" else None
-# if env != "production":
-#     origins = ["http://localhost:5173"]
-# else:
-#     origins = None
+origins = ["http://localhost:5173"] if env != "production" else []
 cors = CORS(app, origins=origins)
 
 @app.route("/")
