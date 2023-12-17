@@ -1,5 +1,7 @@
 main.brewin
 
+.vscode/
+
 # Brewin parser output
 parser.out
 parsetab.py
