@@ -1,6 +1,6 @@
-
 import subprocess, sys, shutil
 
+# TODO: Make the tester behave the same regardless of where it is called from
 def main():
     if len(sys.argv) < 1:
         print("Must provide a version number between 1-4")

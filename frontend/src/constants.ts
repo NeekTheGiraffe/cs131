@@ -4,3 +4,6 @@ export const examples = {
     "stdin": "1234",
   },
 };
+
+export const apiUrl =
+  import.meta.env.PROD ? "/api/run" : "http://127.0.0.1:8000/api/run";

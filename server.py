@@ -1,18 +1,30 @@
-from flask import Flask, request
+from flask import Flask, request, send_from_directory
 from flask_cors import CORS
 from interpreterv4 import Interpreter as InterpreterV4
 from interpreterv3 import Interpreter as InterpreterV3
 from interpreterv2 import Interpreter as InterpreterV2
 from interpreterv1 import Interpreter as InterpreterV1
 import asyncio
+from os import environ
 
 TIMEOUT = 5
 
-if __name__ == 'server':
-    app = Flask(__name__)
-    cors = CORS(app)
+app = Flask(__name__)
 
-@app.post("/")
+env = environ.get("FLASK_ENV")
+origins = ["http://localhost:5173"] if env != "production" else None
+# if env != "production":
+#     origins = ["http://localhost:5173"]
+# else:
+#     origins = None
+cors = CORS(app, origins=origins)
+
+@app.route("/")
+@app.route("/<path:name>")
+def get_static_file(name="index.html"):
+    return send_from_directory("frontend/", name)
+
+@app.post("/api/run")
 async def interpret_program():
     inp = request.json["stdin"].split("\n")
 

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import Editor from 'react-simple-code-editor'
 import Prism from 'prismjs';
 import './App.css'
-import { examples } from './constants';
+import { examples, apiUrl } from './constants';
 
 function App() {
   const [program, setProgram] = useState(examples['hello-world'].program);
@@ -52,7 +52,7 @@ function App() {
           className='run-button'
           onClick={async () => {
             try {
-              const response = await fetch("http://127.0.0.1:5000/",
+              const response = await fetch(apiUrl,
               {
                 method: "POST",
                 headers: {
